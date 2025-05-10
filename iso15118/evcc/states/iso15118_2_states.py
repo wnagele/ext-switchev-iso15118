@@ -1445,6 +1445,14 @@ class CurrentDemand(StateEVCC):
         current_demand_res: CurrentDemandRes = msg.body.current_demand_res
         dc_evse_status: DCEVSEStatus = current_demand_res.dc_evse_status
 
+        if current_demand_res and self.comm_session and self.comm_session.ev_controller:
+            if current_demand_res.evse_present_voltage:
+                voltage = current_demand_res.evse_present_voltage.get_decimal_value()
+                self.comm_session.ev_controller.dc_present_voltage = voltage
+            if current_demand_res.evse_present_current:
+                current = current_demand_res.evse_present_current.get_decimal_value()
+                self.comm_session.ev_controller.dc_present_current = current
+
         if dc_evse_status.evse_notification == EVSENotification.STOP_CHARGING:
             EVEREST_CTX.publish('AC_StopFromCharger', None)
             self.comm_session.charging_session_stop_v2 = ChargingSession.TERMINATE

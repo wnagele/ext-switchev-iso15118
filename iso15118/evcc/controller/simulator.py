@@ -9,6 +9,7 @@ import random
 from typing import List, Optional, Tuple, Union
 import os
 from pathlib import Path
+import time
 
 from cryptography.x509 import load_der_x509_certificate, ExtensionOID
 from cryptography.hazmat.primitives.serialization import (
@@ -149,7 +150,11 @@ class SimEVController(EVControllerInterface):
         self.precharge_loop_cycles: int = 0
         self.welding_detection_cycles: int = 0
         self._charging_is_completed = False
-        self._soc = 10
+        self.capacity = 60000
+        self._current_wh = self.capacity / 100 * 10
+        self._soc = 100 / self.capacity * self._current_wh
+        self.dc_present_current: float = 0
+        self.dc_present_voltage: float = 0
         max_current_limit_value, max_current_limit_multiplier = float2Value_Multiplier(
             EVEREST_EV_STATE.dc_max_current_limit)
         max_power_limit_value, max_power_limit_multiplier = float2Value_Multiplier(
@@ -619,19 +624,32 @@ class SimEVController(EVControllerInterface):
             ChargingProfile(profile_entries=evcc_profile_entry_list),
         )
 
+    last_time = None
+    pct50_step = False
+    pct80_step = False
     async def continue_charging(self) -> bool:
         """Overrides EVControllerInterface.continue_charging()."""
-        # if self.charging_loop_cycles == 0 or await self.is_charging_complete():
-        #     # To simulate a bit of a charging loop, we'll let it run chargingLoopCycle
-        #     # times specified in config file
-        #     return False
-        # else:
-        #     self.charging_loop_cycles -= 1
-        #     self._soc = min(int(self._soc + self.increment), 100)
-        #     # The line below can just be called once process_message in all states
-        #     # are converted to async calls
-        #     # await asyncio.sleep(0.5)
-        #     return True
+
+        logger.error(f'Amps: {self.dc_present_current:.2f}, Volts: {self.dc_present_voltage:.2f}')
+
+        current_time = time.time()
+        if self.last_time is not None and self.dc_present_current and self.dc_present_voltage:
+            self._current_wh += (self.dc_present_current * self.dc_present_voltage * (current_time - self.last_time)) / 3600
+        self.last_time = current_time
+
+        self._soc = min(100 / self.capacity * self._current_wh, 100)
+
+        logger.error(f'SoC: {self._soc:.2f}, kWh: {self._current_wh/1000:.2f}')
+
+        if self._soc > 50 and not self.pct50_step:
+            self.pct50_step = True
+            self.dc_ev_charge_params.dc_target_current.value = self.dc_present_current / 2
+        if self._soc > 80 and not self.pct80_step:
+            self.pct80_step = True
+            self.dc_ev_charge_params.dc_target_current.value = self.dc_present_current / 2
+
+        if await self.is_charging_complete():
+            return False
         return not EVEREST_EV_STATE.StopCharging
     
     async def pause(self) -> bool:
@@ -709,7 +727,7 @@ class SimEVController(EVControllerInterface):
         return False
 
     async def is_charging_complete(self) -> bool:
-        if self._soc == 100 or self._charging_is_completed:
+        if self._soc >= 100 or self._charging_is_completed:
             return True
         else:
             return False
@@ -787,14 +805,14 @@ class SimEVController(EVControllerInterface):
         return DCEVStatusDINSPEC(
             ev_ready=True,
             ev_error_code=DCEVErrorCode.NO_ERROR,
-            ev_ress_soc=self._soc,
+            ev_ress_soc=int(self._soc),
         )
 
     async def get_dc_ev_status(self) -> DCEVStatus:
         return DCEVStatus(
             ev_ready=True,
             ev_error_code=DCEVErrorCode.NO_ERROR,
-            ev_ress_soc=self._soc,
+            ev_ress_soc=int(self._soc),
         )
 
     async def get_scheduled_dc_charge_loop_params(
@@ -882,7 +900,7 @@ class SimEVController(EVControllerInterface):
     async def get_display_params(self) -> DisplayParameters:
         """Overrides EVControllerInterface.get_display_params()."""
         return DisplayParameters(
-            present_soc=self._soc,
+            present_soc=int(self._soc),
             charging_complete=await self.is_charging_complete(),
         )
 
