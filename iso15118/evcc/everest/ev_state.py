@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
 from dataclasses import dataclass, field
+import threading
 
 DEFAULT_DC_MAX_CURRENT_LIMIT_A = 300
 DEFAULT_DC_MAX_POWER_LIMIT_W = 150000
@@ -15,6 +16,7 @@ class EVState:
     PaymentOption: str = ''
     EnergyTransferMode: str = ''
     StopCharging = False
+    StoppedCharging = threading.Event()
     Pause = False
 
     # DC
@@ -36,4 +38,5 @@ class EVState:
 
     def reset(self):
         self.StopCharging = False
+        self.StoppedCharging.clear()
         self.Pause = False

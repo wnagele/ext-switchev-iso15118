@@ -751,6 +751,7 @@ class SimEVController(EVControllerInterface):
             logger.warning(f"Waiting for current to reduce before disconnect. {self.dc_present_current:.2f}")
             return
         self._charging_is_completed = True
+        EVEREST_EV_STATE.StoppedCharging.set()
 
     async def get_ac_charge_loop_params_v20(
         self, control_mode: ControlMode, selected_service: ServiceV20
