@@ -648,9 +648,13 @@ class SimEVController(EVControllerInterface):
             self.pct80_step = True
             self.dc_ev_charge_params.dc_target_current.value = self.dc_present_current / 2
 
+        if EVEREST_EV_STATE.StopCharging or self._soc >= 100:
+            await self.stop_charging()
+
         if await self.is_charging_complete():
             return False
-        return not EVEREST_EV_STATE.StopCharging
+
+        return True
     
     async def pause(self) -> bool:
         return EVEREST_EV_STATE.Pause
@@ -727,10 +731,7 @@ class SimEVController(EVControllerInterface):
         return False
 
     async def is_charging_complete(self) -> bool:
-        if self._soc >= 100 or self._charging_is_completed:
-            return True
-        else:
-            return False
+        return self._charging_is_completed
 
     async def get_remaining_time_to_full_soc(self) -> PVRemainingTimeToFullSOC:
         return PVRemainingTimeToFullSOC(multiplier=0, value=100, unit="s")
@@ -745,6 +746,10 @@ class SimEVController(EVControllerInterface):
         return False
 
     async def stop_charging(self) -> None:
+        self.dc_ev_charge_params.dc_target_current.value = 0
+        if self.dc_present_current > 3:
+            logger.warning(f"Waiting for current to reduce before disconnect. {self.dc_present_current:.2f}")
+            return
         self._charging_is_completed = True
 
     async def get_ac_charge_loop_params_v20(
